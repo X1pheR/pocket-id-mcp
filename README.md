@@ -1,52 +1,132 @@
-# Pocket ID MCP
+# pocket-id-mcp
 
-Small MCP server for bounded Pocket ID administration through the supported Pocket ID API.
+A typed Model Context Protocol server for bounded administration of [Pocket ID](https://github.com/pocket-id/pocket-id) through its supported API.
 
-## Scope
+This is a community-maintained integration and is not affiliated with, endorsed by, or officially maintained by the Pocket ID project.
 
-The server intentionally exposes only:
+> Pre-release project. The public source is validated, but no stable release has been published yet.
 
-- health and OIDC discovery;
-- read-only OIDC client, user-group and user inventory;
-- creation of group-restricted OIDC clients with verified postconditions;
-- replacement of allowed groups on an already restricted client;
-- generation of a confidential client secret directly into a protected file;
-- guarded OIDC client deletion.
+## Design
 
-It does not expose arbitrary HTTP requests, API-key management, application configuration, signup tokens, SCIM administration, user mutation or image management.
+`pocket-id-mcp` maps a deliberately bounded set of Pocket ID administration workflows to explicit MCP tools instead of exposing a generic HTTP request primitive. This keeps tool inputs discoverable, lets MCP clients distinguish read-only and destructive operations, and keeps API keys and generated OIDC client secrets outside model-visible arguments and output.
+
+The server focuses on OIDC client administration and read-only identity inventory. It deliberately does not mirror the complete Pocket ID API.
+
+## Requirements
+
+- Python 3.12 or newer
+- Pocket ID v2.7.0 as the tested compatibility baseline
+- a Pocket ID API key that can perform the Pocket ID operations exposed by the tools you intend to use
+- an MCP client or gateway that supports STDIO servers
+- `uv` for the documented source workflow
+
+Newer Pocket ID versions are unverified unless explicitly documented as supported.
 
 ## Configuration
 
-```text
-POCKET_ID_BASE_URL=https://id.example.com
-POCKET_ID_API_KEY_FILE=/run/secrets/pocket-id-api-key
-POCKET_ID_SECRET_OUTPUT_DIR=/run/secrets/pocket-id-mcp
-POCKET_ID_REQUEST_TIMEOUT_SECONDS=10
+| Variable | Required | Default | Meaning |
+|---|---:|---|---|
+| `POCKET_ID_BASE_URL` | yes | - | Pocket ID HTTP(S) origin without a path, for example `https://id.example.com`. |
+| `POCKET_ID_API_KEY_FILE` | yes | - | Private regular file containing one Pocket ID API key. Group/other permissions are rejected. |
+| `POCKET_ID_SECRET_OUTPUT_DIR` | yes | - | Existing private directory where generated confidential OIDC client secrets may be written. Group/other permissions are rejected. |
+| `POCKET_ID_REQUEST_TIMEOUT_SECONDS` | no | `10` | Per-request timeout in seconds, greater than zero and at most 120. |
+
+Example MCP registration from a source checkout:
+
+```json
+{
+  "mcpServers": {
+    "pocket-id": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--frozen",
+        "--directory",
+        "/path/to/pocket-id-mcp",
+        "pocket-id-mcp"
+      ],
+      "env": {
+        "POCKET_ID_BASE_URL": "https://id.example.com",
+        "POCKET_ID_API_KEY_FILE": "/run/secrets/pocket-id-api-key",
+        "POCKET_ID_SECRET_OUTPUT_DIR": "/run/secrets/pocket-id-mcp"
+      }
+    }
+  }
+}
 ```
 
-`POCKET_ID_API_KEY_FILE` must point to a regular file with no group or other permissions. `POCKET_ID_SECRET_OUTPUT_DIR` must already exist and have no group or other permissions. The server accepts no API key or generated client secret as an MCP tool argument and never returns those secret values in tool output.
+The API-key file and secret-output directory must already exist with private permissions before the server starts.
 
-## Run from a checkout
+## MCP surface
 
-Python 3.12 or newer and `uv` are required.
+The current source exposes 12 curated tools:
+
+| Area | Tools | Access |
+|---|---:|---|
+| Service and OIDC discovery | 2 | Read-only |
+| OIDC client inventory | 2 | Read-only |
+| User-group and user inventory | 4 | Read-only |
+| OIDC client administration | 4 | State-changing; three tools are marked destructive |
+
+See the [Tool reference](docs/tools.md) for the complete tool table, inputs, side effects, annotations and security-relevant postconditions.
+
+## Running from source
+
+The repository includes `uv.lock` for a reproducible source environment.
 
 ```bash
 uv sync --frozen
+POCKET_ID_BASE_URL=https://id.example.com \
+POCKET_ID_API_KEY_FILE=/run/secrets/pocket-id-api-key \
+POCKET_ID_SECRET_OUTPUT_DIR=/run/secrets/pocket-id-mcp \
 uv run --frozen pocket-id-mcp
 ```
 
-An MCP client should start the command as a stateful STDIO child process and provide the required configuration in its process environment.
+## Security model
 
-## Security properties
+- The Pocket ID API key is read from a private local file and is never accepted as an MCP tool argument.
+- Generated confidential OIDC client secrets are written directly to a new exclusive mode-`0600` file and are never returned in MCP output.
+- API calls are restricted to the configured Pocket ID origin; there is no raw request tool.
+- HTTP error bodies are reduced to bounded safe messages rather than returned verbatim.
+- Restricted-client creation attaches the exact requested groups and verifies security-relevant postconditions. A failed verification triggers best-effort cleanup of the newly created client.
+- Allowed-group replacement refuses to operate on an OIDC client that is not already group restricted.
+- OIDC client deletion requires both the current client name and an explicit confirmation flag.
+- All tools publish MCP annotations with `openWorldHint=false`; read and destructive semantics are documented in the [Tool reference](docs/tools.md).
+- Pocket ID remains the authorization boundary. This MCP does not add a second RBAC or authorization model.
 
-- API calls use only the configured Pocket ID origin.
-- HTTP errors are bounded and reduced to a status plus a safe message.
-- Restricted-client creation is a compound operation: create, attach exact groups, read back, verify, and best-effort delete on failure.
-- Client-secret generation opens an exclusive mode-`0600` file before rotating the secret and never returns the secret value.
-- Delete requires the current client name and an explicit boolean confirmation.
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and the maintained security boundary.
 
-See [SECURITY.md](SECURITY.md) for vulnerability reporting after the repository hardening commit.
+## Deliberate exclusions
+
+The server does not expose:
+
+- arbitrary or raw Pocket ID HTTP requests;
+- Pocket ID API-key administration;
+- application-wide Pocket ID configuration;
+- signup-token administration;
+- SCIM administration;
+- user mutation;
+- image management;
+- plaintext API keys or generated OIDC client secrets as MCP inputs or output.
+
+These are product and security boundaries, not missing generic escape hatches.
+
+## Compatibility
+
+Pocket ID v2.7.0 is the tested compatibility baseline for the current `0.1.0` source. Support for other Pocket ID versions is unverified unless it is explicitly documented and covered by validation.
+
+## Development
+
+```bash
+uv sync --frozen --extra test
+uv run --frozen --extra test pytest -q
+uv build
+```
+
+GitHub CI runs the same frozen dependency, test and package-build checks. Dependency updates are proposed by Dependabot and remain subject to compatibility review.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+`pocket-id-mcp` is licensed under the MIT License. See [LICENSE](LICENSE).
+
+Pocket ID is a separate upstream project with its own license and project governance.
