@@ -1,10 +1,12 @@
 # pocket-id-mcp
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/X1pheR/pocket-id-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/X1pheR/pocket-id-mcp)
+
 A typed Model Context Protocol server for bounded administration of [Pocket ID](https://github.com/pocket-id/pocket-id) through its supported API.
 
 This is a community-maintained integration and is not affiliated with, endorsed by, or officially maintained by the Pocket ID project.
 
-> Pre-release project. The public source is validated, but no stable release has been published yet.
+The current public release is immutable `v0.1.0`, published through GitHub Releases with wheel/source artifacts and `SHA256SUMS`. The package is not published to PyPI.
 
 ## Design
 
@@ -70,6 +72,12 @@ The current source exposes 12 curated tools:
 
 See the [Tool reference](docs/tools.md) for the complete tool table, inputs, side effects, annotations and security-relevant postconditions.
 
+## Feedback and contributions
+
+Use [GitHub Issues](https://github.com/X1pheR/pocket-id-mcp/issues) for bug reports and feature requests and pull requests for proposed changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, test requirements, and change expectations. Security issues must follow the private process in [SECURITY.md](SECURITY.md).
+
+User-visible release changes are summarized in [CHANGELOG.md](CHANGELOG.md).
+
 ## Running from source
 
 The repository includes `uv.lock` for a reproducible source environment.
@@ -123,7 +131,9 @@ uv run --frozen --extra test pytest -q
 uv build
 ```
 
-GitHub CI runs the same frozen dependency, test and package-build checks. Dependency updates are proposed by Dependabot and remain subject to compatibility review.
+GitHub CI runs the same frozen dependency, test and package-build checks. Dependency updates are proposed by Dependabot and remain subject to compatibility review. OpenSSF Scorecard runs on `main` and weekly and publishes its public result for independent repository-security review.
+
+Normal development does not publish a release. An accepted strict SemVer tag (`vMAJOR.MINOR.PATCH`) triggers the release workflow, which verifies the exact tag/source/package version, reruns frozen tests, proves two independent wheel/source builds are byte-identical, generates signed GitHub/Sigstore build provenance for the release artifacts, creates a draft release, attaches artifacts plus `SHA256SUMS` and the provenance bundle, and only then publishes the release.
 
 ## License
 
