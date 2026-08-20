@@ -1,6 +1,8 @@
 # pocket-id-mcp
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/X1pheR/pocket-id-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/X1pheR/pocket-id-mcp)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14176/badge)](https://www.bestpractices.dev/projects/14176)
+[![M8ven Live Monitored](https://m8ven.ai/badge/mcp/x1pher-pocket-id-mcp-bvdk2j)](https://m8ven.ai/mcp/x1pher-pocket-id-mcp-bvdk2j)
 
 A typed Model Context Protocol server for bounded administration of [Pocket ID](https://github.com/pocket-id/pocket-id) through its supported API.
 
