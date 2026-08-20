@@ -103,6 +103,7 @@ uv run --frozen pocket-id-mcp
 - Pocket ID remains the authorization boundary. This MCP does not add a second RBAC or authorization model.
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting and the maintained security boundary.
+See [Secure Development](docs/SECURE-DEVELOPMENT.md) for the project-specific secure-design model and common vulnerability mitigations.
 
 ## Deliberate exclusions
 
