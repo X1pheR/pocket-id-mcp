@@ -8,7 +8,7 @@ A typed Model Context Protocol server for bounded administration of [Pocket ID](
 
 This is a community-maintained integration and is not affiliated with, endorsed by, or officially maintained by the Pocket ID project.
 
-The current public release is immutable `v0.1.0`, published through GitHub Releases with wheel/source artifacts and `SHA256SUMS`. The package is not published to PyPI.
+The current public release is immutable `v0.1.1`, published through GitHub Releases with wheel/source artifacts, `SHA256SUMS`, and signed GitHub/Sigstore build provenance. The package is not published to PyPI.
 
 ## Design
 
@@ -19,7 +19,7 @@ The server focuses on OIDC client administration and read-only identity inventor
 ## Requirements
 
 - Python 3.12 or newer
-- Pocket ID v2.7.0 as the tested compatibility baseline
+- Pocket ID v2.14.0 as the tested compatibility baseline
 - a Pocket ID API key that can perform the Pocket ID operations exposed by the tools you intend to use
 - an MCP client or gateway that supports STDIO servers
 - `uv` for the documented source workflow
@@ -34,6 +34,7 @@ Newer Pocket ID versions are unverified unless explicitly documented as supporte
 | `POCKET_ID_API_KEY_FILE` | yes | - | Private regular file containing one Pocket ID API key. Group/other permissions are rejected. |
 | `POCKET_ID_SECRET_OUTPUT_DIR` | yes | - | Existing private directory where generated confidential OIDC client secrets may be written. Group/other permissions are rejected. |
 | `POCKET_ID_REQUEST_TIMEOUT_SECONDS` | no | `10` | Per-request timeout in seconds, greater than zero and at most 120. |
+| `POCKET_ID_LOGO_INPUT_DIR` | no | - | Optional bounded local directory for OIDC-client logo uploads. The directory must not be group/other writable; tool inputs accept safe basenames only. |
 
 Example MCP registration from a source checkout:
 
@@ -52,25 +53,26 @@ Example MCP registration from a source checkout:
       "env": {
         "POCKET_ID_BASE_URL": "https://id.example.com",
         "POCKET_ID_API_KEY_FILE": "/run/secrets/pocket-id-api-key",
-        "POCKET_ID_SECRET_OUTPUT_DIR": "/run/secrets/pocket-id-mcp"
+        "POCKET_ID_SECRET_OUTPUT_DIR": "/run/secrets/pocket-id-mcp",
+        "POCKET_ID_LOGO_INPUT_DIR": "/run/pocket-id-logos"
       }
     }
   }
 }
 ```
 
-The API-key file and secret-output directory must already exist with private permissions before the server starts.
+The API-key file and secret-output directory must already exist with private permissions before the server starts. If configured, the logo-input directory must already exist, must not be group/other writable, and logo files are limited to PNG, JPG/JPEG or SVG up to 2 MiB.
 
 ## MCP surface
 
-The current source exposes 12 curated tools:
+The current source exposes 16 curated tools:
 
 | Area | Tools | Access |
 |---|---:|---|
 | Service and OIDC discovery | 2 | Read-only |
 | OIDC client inventory | 2 | Read-only |
 | User-group and user inventory | 4 | Read-only |
-| OIDC client administration | 4 | State-changing; three tools are marked destructive |
+| OIDC client administration | 8 | One read-only secret-inventory tool plus bounded state-changing lifecycle tools; destructive semantics are explicitly annotated |
 
 See the [Tool reference](docs/tools.md) for the complete tool table, inputs, side effects, annotations and security-relevant postconditions.
 
@@ -95,11 +97,12 @@ uv run --frozen pocket-id-mcp
 ## Security model
 
 - The Pocket ID API key is read from a private local file and is never accepted as an MCP tool argument.
-- Generated confidential OIDC client secrets are written directly to a new exclusive mode-`0600` file and are never returned in MCP output.
+- Generated confidential OIDC client secrets are written directly to a new exclusive mode-`0600` file and are never returned in MCP output. Pocket ID 2.14+ multi-secret rotation keeps existing secrets valid until explicit guarded deletion.
 - API calls are restricted to the configured Pocket ID origin; there is no raw request tool.
 - HTTP error bodies are reduced to bounded safe messages rather than returned verbatim.
 - Restricted-client creation attaches the exact requested groups and verifies security-relevant postconditions. A failed verification triggers best-effort cleanup of the newly created client.
 - Allowed-group replacement refuses to operate on an OIDC client that is not already group restricted.
+- OIDC client logo management is bounded to safe basenames in an explicitly configured local asset directory; arbitrary filesystem paths and remote image fetching are not exposed.
 - OIDC client deletion requires both the current client name and an explicit confirmation flag.
 - All tools publish MCP annotations with `openWorldHint=false`; read and destructive semantics are documented in the [Tool reference](docs/tools.md).
 - Pocket ID remains the authorization boundary. This MCP does not add a second RBAC or authorization model.
@@ -117,7 +120,7 @@ The server does not expose:
 - signup-token administration;
 - SCIM administration;
 - user mutation;
-- image management;
+- arbitrary remote image fetching or unrestricted filesystem image access;
 - plaintext API keys or generated OIDC client secrets as MCP inputs or output.
 
 These are product and security boundaries, not missing generic escape hatches.

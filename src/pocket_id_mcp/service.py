@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import mimetypes
 import os
 import stat
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
 from .api import PocketIdClient, PocketIdError
@@ -233,7 +235,18 @@ class PocketIdService:
             raise ValueError("Refusing to assign groups to an unrestricted OIDC client")
         return self._replace_allowed_groups(client_id, group_names)
 
-    def create_secret_file(self, client_id: str, file_name: str) -> dict[str, Any]:
+    def list_client_secrets(self, client_id: str) -> list[dict[str, Any]]:
+        value = self.client.request("GET", f"/api/oidc/clients/{client_id}/secrets")
+        if not isinstance(value, list):
+            raise PocketIdError("Pocket ID client-secrets response has an unexpected shape")
+        safe: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            safe.append({key: item.get(key) for key in ("id", "prefix", "createdAt", "expiresAt", "isActive") if key in item})
+        return safe
+
+    def create_secret_file(self, client_id: str, file_name: str, expires_at: datetime | None = None) -> dict[str, Any]:
         current = self.client.request("GET", f"/api/oidc/clients/{client_id}")
         if not isinstance(current, dict):
             raise PocketIdError("Pocket ID client response has an unexpected shape")
@@ -246,12 +259,21 @@ class PocketIdService:
         descriptor = os.open(target, flags, 0o600)
         generated = False
         try:
+            payload: dict[str, Any] = {}
+            if expires_at is not None:
+                normalized = expires_at.astimezone(timezone.utc) if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
+                payload["expiresAt"] = normalized.isoformat().replace("+00:00", "Z")
             value = self.client.request(
-                "POST", f"/api/oidc/clients/{client_id}/secret"
+                "POST", f"/api/oidc/clients/{client_id}/secrets", payload
             )
-            if not isinstance(value, dict) or not isinstance(value.get("secret"), str):
+            if (
+                not isinstance(value, dict)
+                or not isinstance(value.get("secret"), str)
+                or not isinstance(value.get("id"), str)
+            ):
                 raise PocketIdError("Pocket ID secret response has an unexpected shape")
             secret = value["secret"]
+            secret_id = value["id"]
             generated = True
             encoded = secret.encode("utf-8")
             with os.fdopen(descriptor, "wb", closefd=True) as handle:
@@ -270,6 +292,11 @@ class PocketIdService:
                 "secret_file": str(target),
                 "secret_bytes": len(encoded),
                 "permissions": "0600",
+                "secret_id": secret_id,
+                "prefix": value.get("prefix"),
+                "created_at": value.get("createdAt"),
+                "expires_at": value.get("expiresAt"),
+                "is_active": value.get("isActive"),
             }
         except Exception:
             if descriptor >= 0:
@@ -279,10 +306,65 @@ class PocketIdService:
             except OSError:
                 pass
             if generated:
+                try:
+                    self.client.request("DELETE", f"/api/oidc/clients/{client_id}/secrets/{secret_id}")
+                except Exception:
+                    pass
                 raise PocketIdError(
-                    "A new client secret was generated but could not be persisted; generate another secret"
+                    "A new client secret was generated but could not be persisted; the MCP attempted to revoke it"
                 ) from None
             raise
+
+    def delete_client_secret(self, client_id: str, secret_id: str, confirm: bool) -> dict[str, Any]:
+        if confirm is not True:
+            raise ValueError("confirm must be true for OIDC client-secret deletion")
+        existing = self.list_client_secrets(client_id)
+        if not any(item.get("id") == secret_id for item in existing):
+            raise ValueError("OIDC client secret does not exist")
+        self.client.request("DELETE", f"/api/oidc/clients/{client_id}/secrets/{secret_id}")
+        remaining = self.list_client_secrets(client_id)
+        if any(item.get("id") == secret_id for item in remaining):
+            raise PocketIdError("OIDC client secret still exists after deletion")
+        return {"deleted": True, "client_id": client_id, "secret_id": secret_id}
+
+    def upload_client_logo(self, client_id: str, file_name: str, light: bool) -> dict[str, Any]:
+        source = self.settings.logo_path(file_name)
+        suffix = source.suffix.lower()
+        allowed = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml"}
+        content_type = allowed.get(suffix) or mimetypes.guess_type(source.name)[0]
+        if content_type not in set(allowed.values()):
+            raise ValueError("Logo file must be PNG, JPG/JPEG, or SVG")
+        data = source.read_bytes()
+        if len(data) > 2 * 1024 * 1024:
+            raise ValueError("Logo input exceeds 2 MiB")
+        query = "true" if light else "false"
+        self.client.upload_file(
+            f"/api/oidc/clients/{client_id}/logo?light={query}",
+            field_name="file",
+            file_name=source.name,
+            content_type=content_type,
+            data=data,
+        )
+        current = self.client.request("GET", f"/api/oidc/clients/{client_id}")
+        if not isinstance(current, dict):
+            raise PocketIdError("Pocket ID client verification response has an unexpected shape")
+        expected_key = "hasLogo" if light else "hasDarkLogo"
+        if current.get(expected_key) is not True:
+            raise PocketIdError("Pocket ID logo postcondition verification failed")
+        return {"client_id": client_id, "file_name": source.name, "light": light, "uploaded": True}
+
+    def delete_client_logo(self, client_id: str, light: bool, confirm: bool) -> dict[str, Any]:
+        if confirm is not True:
+            raise ValueError("confirm must be true for OIDC client-logo deletion")
+        query = "true" if light else "false"
+        self.client.request("DELETE", f"/api/oidc/clients/{client_id}/logo?light={query}")
+        current = self.client.request("GET", f"/api/oidc/clients/{client_id}")
+        if not isinstance(current, dict):
+            raise PocketIdError("Pocket ID client verification response has an unexpected shape")
+        expected_key = "hasLogo" if light else "hasDarkLogo"
+        if current.get(expected_key) is True:
+            raise PocketIdError("Pocket ID logo still exists after deletion")
+        return {"client_id": client_id, "light": light, "deleted": True}
 
     def delete_client(
         self, client_id: str, expected_name: str, confirm: bool

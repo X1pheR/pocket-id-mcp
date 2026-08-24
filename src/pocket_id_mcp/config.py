@@ -16,6 +16,7 @@ class Settings:
     api_key_file: Path
     secret_output_dir: Path
     request_timeout_seconds: float = 10.0
+    logo_input_dir: Path | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -23,7 +24,9 @@ class Settings:
         api_key_file = Path(os.environ.get("POCKET_ID_API_KEY_FILE", ""))
         secret_output_dir = Path(os.environ.get("POCKET_ID_SECRET_OUTPUT_DIR", ""))
         timeout = float(os.environ.get("POCKET_ID_REQUEST_TIMEOUT_SECONDS", "10"))
-        settings = cls(base_url, api_key_file, secret_output_dir, timeout)
+        logo_dir_raw = os.environ.get("POCKET_ID_LOGO_INPUT_DIR", "").strip()
+        logo_input_dir = Path(logo_dir_raw) if logo_dir_raw else None
+        settings = cls(base_url, api_key_file, secret_output_dir, timeout, logo_input_dir)
         settings.validate()
         return settings
 
@@ -35,6 +38,8 @@ class Settings:
             raise ValueError("POCKET_ID_REQUEST_TIMEOUT_SECONDS must be greater than 0 and at most 120")
         self._validate_private_file(self.api_key_file, "Pocket ID API-key file")
         self._validate_private_directory(self.secret_output_dir, "Pocket ID secret output directory")
+        if self.logo_input_dir is not None:
+            self._validate_safe_asset_directory(self.logo_input_dir, "Pocket ID logo input directory")
         self.read_api_key()
 
     @staticmethod
@@ -61,6 +66,17 @@ class Settings:
         if stat.S_IMODE(info.st_mode) & 0o077:
             raise ValueError(f"{label} must not have group or other permissions: {path}")
 
+    @staticmethod
+    def _validate_safe_asset_directory(path: Path, label: str) -> None:
+        try:
+            info = path.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(f"{label} does not exist: {path}") from exc
+        if not stat.S_ISDIR(info.st_mode):
+            raise ValueError(f"{label} is not a directory: {path}")
+        if stat.S_IMODE(info.st_mode) & 0o022:
+            raise ValueError(f"{label} must not be group or other writable: {path}")
+
     def read_api_key(self) -> str:
         self._validate_private_file(self.api_key_file, "Pocket ID API-key file")
         value = self.api_key_file.read_text(encoding="utf-8").strip()
@@ -75,4 +91,24 @@ class Settings:
         candidate = self.secret_output_dir / file_name
         if candidate.parent.resolve() != self.secret_output_dir.resolve():
             raise ValueError("Secret output path escapes the configured directory")
+        return candidate
+
+
+    def logo_path(self, file_name: str) -> Path:
+        if self.logo_input_dir is None:
+            raise ValueError("POCKET_ID_LOGO_INPUT_DIR is not configured")
+        if not _SAFE_FILE_NAME.fullmatch(file_name):
+            raise ValueError("Logo file name must be a safe basename of at most 128 characters")
+        self._validate_safe_asset_directory(self.logo_input_dir, "Pocket ID logo input directory")
+        candidate = self.logo_input_dir / file_name
+        if candidate.parent.resolve() != self.logo_input_dir.resolve():
+            raise ValueError("Logo input path escapes the configured directory")
+        try:
+            info = candidate.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(f"Logo file does not exist: {file_name}") from exc
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("Logo input must be a regular file")
+        if info.st_size < 1 or info.st_size > 2 * 1024 * 1024:
+            raise ValueError("Logo input must be between 1 byte and 2 MiB")
         return candidate

@@ -11,9 +11,13 @@ from pydantic import BaseModel, ValidationError
 from .api import PocketIdClient, PocketIdError
 from .config import Settings
 from .models import (
+    ClientIdInput,
     DeleteClientInput,
+    DeleteLogoInput,
+    DeleteSecretInput,
     EmptyInput,
     IdentifierInput,
+    LogoFileInput,
     RestrictedClientCreateInput,
     SearchInput,
     SecretFileInput,
@@ -117,9 +121,35 @@ async def list_tools() -> list[types.Tool]:
             destructive=True,
         ),
         _tool(
+            "oidc_client_secret_list",
+            "List non-secret metadata for an OIDC client's secrets, including IDs, prefixes, timestamps and active state.",
+            ClientIdInput,
+            read_only=True,
+        ),
+        _tool(
             "oidc_client_create_secret_file",
-            "Rotate a confidential OIDC client secret and write it directly to a new exclusive mode-0600 file in the configured secret directory. The secret value is never returned.",
+            "Add a confidential OIDC client secret and write its one-time value directly to a new exclusive mode-0600 file. Existing secrets remain valid until explicitly deleted; the clear secret is never returned.",
             SecretFileInput,
+            read_only=False,
+        ),
+        _tool(
+            "oidc_client_secret_delete",
+            "Delete exactly one OIDC client secret by ID after explicit confirmation and verify it is gone.",
+            DeleteSecretInput,
+            read_only=False,
+            destructive=True,
+        ),
+        _tool(
+            "oidc_client_logo_upload_file",
+            "Upload or replace one light/dark OIDC client logo from the configured bounded local logo asset directory.",
+            LogoFileInput,
+            read_only=False,
+            destructive=True,
+        ),
+        _tool(
+            "oidc_client_logo_delete",
+            "Delete one light/dark OIDC client logo after explicit confirmation and verify it is gone.",
+            DeleteLogoInput,
             read_only=False,
             destructive=True,
         ),
@@ -174,9 +204,21 @@ async def call_tool(
             result = _service.set_allowed_groups(
                 args.client_id, args.allowed_group_names
             )
+        elif name == "oidc_client_secret_list":
+            args = _validate(ClientIdInput, arguments)
+            result = _service.list_client_secrets(args.client_id)
         elif name == "oidc_client_create_secret_file":
             args = _validate(SecretFileInput, arguments)
-            result = _service.create_secret_file(args.client_id, args.file_name)
+            result = _service.create_secret_file(args.client_id, args.file_name, args.expires_at)
+        elif name == "oidc_client_secret_delete":
+            args = _validate(DeleteSecretInput, arguments)
+            result = _service.delete_client_secret(args.client_id, args.secret_id, args.confirm)
+        elif name == "oidc_client_logo_upload_file":
+            args = _validate(LogoFileInput, arguments)
+            result = _service.upload_client_logo(args.client_id, args.file_name, args.light)
+        elif name == "oidc_client_logo_delete":
+            args = _validate(DeleteLogoInput, arguments)
+            result = _service.delete_client_logo(args.client_id, args.light, args.confirm)
         elif name == "oidc_client_delete":
             args = _validate(DeleteClientInput, arguments)
             result = _service.delete_client(

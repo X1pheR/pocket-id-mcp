@@ -31,7 +31,7 @@ class PocketIdClient:
         body = None if payload is None else json.dumps(payload, separators=(",", ":")).encode("utf-8")
         headers = {
             "Accept": "application/json",
-            "User-Agent": "pocket-id-mcp/0.1.0",
+            "User-Agent": "pocket-id-mcp/0.1.1",
         }
         if body is not None:
             headers["Content-Type"] = "application/json"
@@ -42,6 +42,58 @@ class PocketIdClient:
             data=body,
             headers=headers,
             method=method,
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=self.settings.request_timeout_seconds
+            ) as response:
+                raw = response.read(2 * 1024 * 1024 + 1)
+                if len(raw) > 2 * 1024 * 1024:
+                    raise PocketIdError("Pocket ID response exceeded the 2 MiB safety limit")
+                if not raw:
+                    return None
+                return json.loads(raw)
+        except urllib.error.HTTPError as error:
+            raw = error.read(4096)
+            message = self._safe_error_message(raw)
+            raise PocketIdError(
+                f"Pocket ID API returned HTTP {error.code}" + (f": {message}" if message else "")
+            ) from None
+        except urllib.error.URLError as error:
+            reason = str(error.reason)[:256]
+            raise PocketIdError(f"Pocket ID API request failed: {reason}") from None
+        except TimeoutError:
+            raise PocketIdError("Pocket ID API request timed out") from None
+        except json.JSONDecodeError:
+            raise PocketIdError("Pocket ID API returned invalid JSON") from None
+
+
+    def upload_file(
+        self,
+        path: str,
+        *,
+        field_name: str,
+        file_name: str,
+        content_type: str,
+        data: bytes,
+    ) -> Any:
+        if not path.startswith("/"):
+            raise ValueError("Pocket ID API path must be absolute")
+        boundary = "----pocket-id-mcp-boundary-7b38c4b9"
+        header = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{file_name}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode("ascii")
+        body = header + data + f"\r\n--{boundary}--\r\n".encode("ascii")
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "pocket-id-mcp/0.1.1",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "X-API-KEY": self.settings.read_api_key(),
+        }
+        request = urllib.request.Request(
+            self.settings.base_url + path, data=body, headers=headers, method="POST"
         )
         try:
             with urllib.request.urlopen(
