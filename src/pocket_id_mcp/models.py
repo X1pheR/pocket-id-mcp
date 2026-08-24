@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -36,9 +38,28 @@ class SetAllowedGroupsInput(StrictModel):
     allowed_group_names: list[str] = Field(min_length=1, max_length=20)
 
 
-class SecretFileInput(StrictModel):
+class ClientIdInput(StrictModel):
     client_id: str = Field(min_length=1, max_length=128)
+
+
+class SecretFileInput(ClientIdInput):
     file_name: str = Field(min_length=1, max_length=128)
+    expires_at: datetime | None = None
+
+
+class DeleteSecretInput(ClientIdInput):
+    secret_id: str = Field(min_length=1, max_length=128)
+    confirm: bool
+
+
+class LogoFileInput(ClientIdInput):
+    file_name: str = Field(min_length=1, max_length=128)
+    light: bool = True
+
+
+class DeleteLogoInput(ClientIdInput):
+    light: bool = True
+    confirm: bool
 
 
 class DeleteClientInput(StrictModel):

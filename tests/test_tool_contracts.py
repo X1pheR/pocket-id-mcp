@@ -23,3 +23,11 @@ def test_allowed_group_replacement_is_destructive() -> None:
     assert annotations.destructiveHint is True
     assert annotations.idempotentHint is False
     assert annotations.openWorldHint is False
+
+def test_v014_secret_and_logo_tools_have_expected_safety_annotations() -> None:
+    tools = {tool.name: tool for tool in asyncio.run(list_tools())}
+    assert tools["oidc_client_secret_list"].annotations.readOnlyHint is True
+    assert tools["oidc_client_create_secret_file"].annotations.destructiveHint is False
+    assert tools["oidc_client_secret_delete"].annotations.destructiveHint is True
+    assert tools["oidc_client_logo_upload_file"].annotations.destructiveHint is True
+    assert tools["oidc_client_logo_delete"].annotations.destructiveHint is True

@@ -1,6 +1,6 @@
 # Tool reference
 
-`pocket-id-mcp` exposes 12 explicit MCP tools. There is no generic Pocket ID HTTP request tool.
+`pocket-id-mcp` exposes 16 explicit MCP tools. There is no generic Pocket ID HTTP request tool.
 
 ## Overview
 
@@ -16,7 +16,11 @@
 | `user_get` | Read | No | Read one user with a bounded non-secret field set. |
 | `oidc_client_create_restricted` | Write | No | Create and verify a group-restricted OIDC client. |
 | `oidc_client_set_allowed_groups` | Write | Yes | Replace the exact allowed-group set on an already restricted client. |
-| `oidc_client_create_secret_file` | Write | Yes | Rotate a confidential client secret and write it directly to a new private file. |
+| `oidc_client_secret_list` | Read | No | List non-secret metadata for a confidential OIDC client's Pocket ID 2.14+ secrets. |
+| `oidc_client_create_secret_file` | Write | No | Add a confidential client secret and write its one-time value directly to a new private file while existing secrets remain valid. |
+| `oidc_client_secret_delete` | Write | Yes | Delete exactly one client secret by ID behind an explicit confirmation guard. |
+| `oidc_client_logo_upload_file` | Write | Yes | Upload or replace one light/dark OIDC-client logo from the bounded local asset directory. |
+| `oidc_client_logo_delete` | Write | Yes | Delete one light/dark OIDC-client logo behind an explicit confirmation guard. |
 | `oidc_client_delete` | Write | Yes | Delete one OIDC client behind name-match and confirmation guards. |
 
 All tools publish `openWorldHint=false`. Read-only tools publish `readOnlyHint=true` and `idempotentHint=true`. State-changing tools publish `readOnlyHint=false` and `idempotentHint=false`.
@@ -144,14 +148,23 @@ Replaces the complete allowed-group set for an existing group-restricted OIDC cl
 
 **Annotation:** destructive because the existing allowed-group set is replaced.
 
+### `oidc_client_secret_list`
+
+Lists non-secret metadata for Pocket ID 2.14+ client secrets, including secret IDs, prefixes, creation/expiry timestamps and active state where available. The clear secret value is never returned.
+
+**Input:** `client_id` — target OIDC client identifier.
+
+**Side effects:** none.
+
 ### `oidc_client_create_secret_file`
 
-Rotates the secret of an existing confidential OIDC client and writes the new value directly to a new file inside `POCKET_ID_SECRET_OUTPUT_DIR`.
+Adds a secret to an existing confidential OIDC client and writes the one-time value directly to a new file inside `POCKET_ID_SECRET_OUTPUT_DIR`. Existing secrets remain valid until explicitly deleted, enabling zero-downtime consumer migration.
 
 **Input:**
 
 - `client_id` — target OIDC client identifier;
-- `file_name` — safe basename for the new secret file, maximum 128 characters.
+- `file_name` — safe basename for the new secret file, maximum 128 characters;
+- `expires_at` — optional secret expiry timestamp.
 
 **Guards and postconditions:**
 
@@ -161,9 +174,39 @@ Rotates the secret of an existing confidential OIDC client and writes the new va
 - writes the generated secret with mode `0600` and verifies the resulting file type and mode;
 - never returns the secret value in MCP output;
 - removes an incomplete output file on write failure where possible;
-- if Pocket ID has already rotated the secret but persistence fails, reports that another secret must be generated rather than pretending rollback occurred.
+- if Pocket ID generated a new secret but local persistence fails, best-effort revokes that newly generated secret before reporting failure.
 
-**Annotation:** destructive because rotating the client secret invalidates the previous secret.
+**Annotation:** state-changing but not destructive because existing valid secrets are retained.
+
+### `oidc_client_secret_delete`
+
+Deletes exactly one Pocket ID 2.14+ OIDC client secret by secret ID.
+
+**Input:** `client_id`, `secret_id`, and `confirm=true`.
+
+**Guards and postconditions:** requires explicit confirmation, verifies the secret exists first, deletes only the selected secret, and verifies it is absent afterward.
+
+**Annotation:** destructive.
+
+### `oidc_client_logo_upload_file`
+
+Uploads or replaces one light or dark OIDC-client logo from `POCKET_ID_LOGO_INPUT_DIR`.
+
+**Input:** `client_id`, a safe `file_name` basename and `light` boolean.
+
+**Guards and postconditions:** the configured directory may not be group/other writable; arbitrary paths and remote URLs are rejected; only PNG, JPG/JPEG and SVG files up to 2 MiB are accepted; the client is read back to verify the logo state.
+
+**Annotation:** destructive because an existing logo variant may be replaced.
+
+### `oidc_client_logo_delete`
+
+Deletes one light or dark OIDC-client logo.
+
+**Input:** `client_id`, `light` boolean and `confirm=true`.
+
+**Guards and postconditions:** requires explicit confirmation and reads the client back to verify that the selected logo variant is gone.
+
+**Annotation:** destructive.
 
 ### `oidc_client_delete`
 
