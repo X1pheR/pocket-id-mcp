@@ -127,17 +127,15 @@ These are product and security boundaries, not missing generic escape hatches.
 
 ## Compatibility
 
-Pocket ID v2.7.0 is the tested compatibility baseline for the current `0.1.0` source. Support for other Pocket ID versions is unverified unless it is explicitly documented and covered by validation.
+Pocket ID v2.14.0 is the tested compatibility baseline for the current `0.1.1` source. Support for other Pocket ID versions is unverified unless it is explicitly documented and covered by validation.
 
 ## Development
 
 ```bash
-uv sync --frozen --extra test
-uv run --frozen --extra test pytest -q
-uv build
+./scripts/verify.sh
 ```
 
-GitHub CI runs the same frozen dependency, test and package-build checks. Dependency updates are proposed by Dependabot and remain subject to compatibility review. OpenSSF Scorecard runs on `main` and weekly and publishes its public result for independent repository-security review.
+The repository-owned verifier uses the version-pinned `uv` tool container and runs the frozen dependency sync, full test suite, package build and Git diff check. GitHub CI invokes this same verifier rather than maintaining a second acceptance path. Dependency updates are proposed by Dependabot and remain subject to compatibility review. OpenSSF Scorecard runs on `main` and weekly and publishes its public result for independent repository-security review.
 
 Normal development does not publish a release. An accepted strict SemVer tag (`vMAJOR.MINOR.PATCH`) triggers the release workflow, which verifies the exact tag/source/package version, reruns frozen tests, proves two independent wheel/source builds are byte-identical, generates signed GitHub/Sigstore build provenance for the release artifacts, creates a draft release, attaches artifacts plus `SHA256SUMS` and the provenance bundle, and only then publishes the release.
 
