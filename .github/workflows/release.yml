@@ -59,12 +59,8 @@ jobs:
             git merge-base --is-ancestor "${EXPECTED_SHA}" origin/main
           fi
 
-      - name: Verify exact tag
-        shell: bash
-        run: |
-          set -euo pipefail
-          uv sync --frozen --extra test
-          uv run --frozen --extra test pytest -q
+      - name: Run canonical local verifier
+        run: ./scripts/verify.sh
 
       - name: Build reproducible release artifacts
         shell: bash
