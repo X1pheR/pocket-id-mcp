@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "name": "Pocket ID MCP",
+  "category": "Identity & Resilience",
+  "kind": "mcp-server"
+}
